@@ -9,7 +9,7 @@ import numpy as np
 ### Constants ###
 
 # The larger the more stable the video, but less reactive to sudden panning
-SMOOTHING_RADIUS=250
+
 
 
 def movingAverage(curve, radius):
@@ -25,7 +25,7 @@ def movingAverage(curve, radius):
     # return smoothed curve
     return curve_smoothed
 
-def smooth(trajectory):
+def smooth(trajectory, SMOOTHING_RADIUS):
     smoothed_trajectory = np.copy(trajectory)
     # Filter the x, y and angle curves
     for i in range(3):
@@ -57,7 +57,8 @@ class Video:
         cv2.COLOR_BGR2LAB
         cv2.COLOR_BGR2GRAY
     '''
-    
+    SMOOTHING_RADIUS=250
+    thermal = False
     n_frames = -1
     fps = -1
     w = -1
@@ -71,8 +72,6 @@ class Video:
         self.stabilize()
         # Release video
         self.cap.release()
-        
-        
 
     def cvplayback( self, vname ):
         while self.cap.isOpened():
@@ -86,8 +85,7 @@ class Video:
              if cv2.waitKey(1) == ord('q'):
                  break
         self.cap.release()
-        
-        
+         
     def cvopen( self, vname ):
         cap = cv2.VideoCapture( vname )
         self.n_frames = int( cap.get( cv2.CAP_PROP_FRAME_COUNT ) )
@@ -97,7 +95,11 @@ class Video:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         outname = os.path.join( args.cwd,
                                 os.path.basename(vname).split(".m")[0] + "_stabilized.mp4")                                          
-        print(outname, "Frames per second:", self.fps)
+        print(f"{outname}:\nH={self.h}pixels;W={self.w}pixels,fps={self.fps}")
+        if (self.w == 640 and self.h == 480):
+            print("Thermal Video Detected - adjusting stabilization parameters")
+            self.SMOOTHING_RADIUS=50
+            self.thermal = True
         self.out = cv2.VideoWriter( outname, fourcc, self.fps, ( 2*self.w, self.h ), True )
         self.fullpath = os.path.abspath( outname )
         self.cap = cap
@@ -111,14 +113,21 @@ class Video:
             everyFrame = 0
         else:
             everyFrame = 1
-            
+        
         for i in range(self.n_frames-2):
             #Detect feature points in previous frame
-            prev_pts = cv2.goodFeaturesToTrack(prev_gray,
-                                              maxCorners=200,
-                                              qualityLevel = 0.005,
-                                              minDistance=40,
-                                              blockSize=3)
+            if self.thermal:
+                prev_pts = cv2.goodFeaturesToTrack(prev_gray,
+                                                  maxCorners=200,
+                                                  qualityLevel = 0.001,
+                                                  minDistance=20,
+                                                  blockSize=3)
+            else:
+                prev_pts = cv2.goodFeaturesToTrack(prev_gray,
+                                                  maxCorners=250,
+                                                  qualityLevel = 0.005,
+                                                  minDistance=40,
+                                                  blockSize=3)
             success, curr = cap.read()
             if not success:
                 break
@@ -161,15 +170,12 @@ class Video:
             # Move to next frame
             prev_gray = curr_gray
 
-            if everyFrame:
-                print("Frame: " + str(i) +  "/" + str(self.n_frames) + " -  Tracked points : " + str(len(prev_pts)))
-            else:
-                if i % 1000 == 0:
-                    print("Frame: " + str(i) +  "/" + str(self.n_frames) + " -  Tracked points : " + str(len(prev_pts)))
+            if i % ( int((self.n_frames**0.5) / 3) ) == 0:
+                print(f"Frame: {i}/{self.n_frames} - Tracked points: {len(prev_pts)}")
 
         trajectory = np.cumsum(transforms, axis=0)
 
-        smoothed_trajectory = smooth(trajectory)
+        smoothed_trajectory = smooth(trajectory, self.SMOOTHING_RADIUS)
 
         difference = smoothed_trajectory - trajectory
 
@@ -209,7 +215,7 @@ class Video:
             #    frame_out = cv2.resize(frame_out, (int(frame_out.shape[1]/2), int(frame_out.shape[0]/2)));
 
             cv2.imshow("Before and After", frame_out)
-            cv2.waitKey(10)
+            cv2.waitKey(int(1/self.fps * 1000))
             self.out.write( frame_out )
         cap.release()
         self.out.release()
@@ -232,11 +238,8 @@ def main( args ):
         os.path.dirname(args.inPath))
 
     vid = Video( args )
-    
     print( f"Video processed sucessfully.  Output to \n {vid.fullpath}" )
     
-    
-        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
