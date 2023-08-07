@@ -8,7 +8,7 @@ import numpy as np
 
 ### Constants ###
 
-# The larger the more stable the video, but less reactive to sudden panning
+
 
 
 
@@ -57,6 +57,7 @@ class Video:
         cv2.COLOR_BGR2LAB
         cv2.COLOR_BGR2GRAY
     '''
+    # The larger the smoothing radius, the more stable the video, but less reactive to sudden panning
     SMOOTHING_RADIUS=250
     thermal = False
     n_frames = -1
